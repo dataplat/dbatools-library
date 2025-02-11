@@ -88,7 +88,11 @@ if ($PSVersionTable.PSEdition -ne "Core") {
 }
 
 if ($IsWindows -and $PSVersionTable.PSEdition -eq "Core") {
-    $sqlclient = [System.IO.Path]::Combine($script:libraryroot, "lib", "win-sqlclient", "Microsoft.Data.SqlClient.dll")
+    if ($env:PROCESSOR_ARCHITECTURE -eq "x86") {
+        $sqlclient = [System.IO.Path]::Combine($script:libraryroot, "lib", "win-sqlclient-x86", "Microsoft.Data.SqlClient.dll")
+    } else {
+        $sqlclient = [System.IO.Path]::Combine($script:libraryroot, "lib", "win-sqlclient", "Microsoft.Data.SqlClient.dll")
+    }
 } else {
     $sqlclient = [System.IO.Path]::Combine($script:libraryroot, "lib", "Microsoft.Data.SqlClient.dll")
 }
@@ -109,8 +113,6 @@ if ($PSVersionTable.PSEdition -eq "Core") {
         'Microsoft.SqlServer.Dac',
         'Microsoft.SqlServer.Smo',
         'Microsoft.SqlServer.SmoExtended',
-        'Microsoft.SqlServer.SqlWmiManagement',
-        'Microsoft.SqlServer.WmiEnum',
         'Microsoft.SqlServer.Management.RegisteredServers',
         'Microsoft.SqlServer.Management.Collector',
         'Microsoft.SqlServer.Management.XEvent',
@@ -126,8 +128,6 @@ if ($PSVersionTable.PSEdition -eq "Core") {
         'Microsoft.SqlServer.Dac',
         'Microsoft.SqlServer.Smo',
         'Microsoft.SqlServer.SmoExtended',
-        'Microsoft.SqlServer.SqlWmiManagement',
-        'Microsoft.SqlServer.WmiEnum',
         'Microsoft.SqlServer.Management.RegisteredServers',
         'Microsoft.SqlServer.Management.IntegrationServices',
         'Microsoft.SqlServer.Management.Collector',
