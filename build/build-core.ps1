@@ -2,6 +2,19 @@ $PSDefaultParameterValues["*:Force"] = $true
 $PSDefaultParameterValues["*:Confirm"] = $false
 Push-Location /mnt/c/github/dbatools.library
 
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    sudo apt-get install -y dotnet-sdk-8.0
+}
+
+if (-not (Get-Command msiexec -ErrorAction SilentlyContinue)) {
+    sudo apt-get install -y msitools
+}
+
+if (-not (Get-Command unzip -ErrorAction SilentlyContinue)) {
+    sudo apt-get install -y unzip
+}
+
+
 if (Test-Path ./lib) {
     write-warning "removing ./lib"
     rm -rf lib
@@ -18,15 +31,19 @@ if (-not $scriptroot) {
 $root = Split-Path -Path $scriptroot
 Push-Location "$root/project"
 
+dotnet clean
+dotnet publish --force --configuration release --verbosity diag --framework net8.0 | Out-String -OutVariable build
+dotnet test --configuration release --verbosity diag --framework net8.0 | Out-String -OutVariable test
 
-dotnet publish --configuration release --framework net6.0 | Out-String -OutVariable build
-dotnet test --framework net6.0 --verbosity normal | Out-String -OutVariable test
+## the build is now in dbatools.library/lib
 Pop-Location
 
 Remove-Item -Path lib/dbatools.xml
-Get-ChildItem -Path lib/net6.0 -File | Remove-Item
-Move-Item -Path lib/net6.0/publish/* -Destination lib/ #-ErrorAction Ignore
-Remove-Item -Path lib/net6.0 -Recurse -ErrorAction Ignore
+Get-ChildItem -Path lib/net8.0 -File | Remove-Item
+Move-Item -Path lib/net8.0/publish/* -Destination lib/ #-ErrorAction Ignore
+Remove-Item -Path lib/net8.0 -Recurse -ErrorAction Ignore
+#publish got moved to lib
+
 
 Get-ChildItem ./lib -Recurse -Include *.pdb | Remove-Item
 Get-ChildItem ./lib -Recurse -Include *.xml | Remove-Item
@@ -38,15 +55,18 @@ if ($IsLinux -or $IsMacOs) {
     $null = mkdir ./temp
     $null = mkdir ./temp/dacfull
     $null = mkdir ./temp/xe
+    $null = mkdir ./temp/bogus
+    $null = mkdir ./temp/linux
+
     $null = mkdir ./third-party
     $null = mkdir ./third-party/XESmartTarget
     $null = mkdir ./third-party/bogus
     $null = mkdir ./third-party/LumenWorks
-    $null = mkdir ./temp/bogus
-    $null = mkdir ./temp/linux
+
     $null = mkdir ./lib/win
     $null = mkdir ./lib/mac
     $null = mkdir ./lib/win-sqlclient
+    $null = mkdir ./lib/win-sqlclient-x86
 } else {
     $tempdir = "C:/temp"
     $null = New-Item -ItemType Directory $tempdir -ErrorAction Ignore
@@ -60,6 +80,7 @@ if ($IsLinux -or $IsMacOs) {
     $null = New-Item -ItemType Directory ./lib/win
     $null = New-Item -ItemType Directory ./lib/mac
     $null = New-Item -ItemType Directory ./lib/win-sqlclient
+    $null = New-Item -ItemType Directory ./lib/win-sqlclient-x86
 }
 
 
@@ -69,10 +90,10 @@ $ProgressPreference = "SilentlyContinue"
 
 Invoke-WebRequest -Uri https://aka.ms/sqlpackage-linux -OutFile ./temp/sqlpackage-linux.zip
 Invoke-WebRequest -Uri https://aka.ms/sqlpackage-macos -OutFile ./temp/sqlpackage-macos.zip
-Invoke-WebRequest -Uri https://aka.ms/dacfx-msi -OutFile .\temp\DacFramework.msi
+Invoke-WebRequest -Uri https://aka.ms/dacfx-msi -OutFile ./temp/DacFramework.msi
 Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Bogus -OutFile ./temp/bogus.zip
 Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/LumenWorksCsvReader -OutFile ./temp/LumenWorksCsvReader.zip
-Invoke-WebRequest -Uri https://github.com/spaghettidba/XESmartTarget/releases/download/v1.4.9/XESmartTarget_x64.msi -OutFile ./temp/XESmartTarget_x64.msi
+Invoke-WebRequest -Uri https://github.com/spaghettidba/XESmartTarget/releases/download/v1.5.7/XESmartTarget_x64.msi -OutFile ./temp/XESmartTarget_x64.msi
 
 $ProgressPreference = "Continue"
 
@@ -104,7 +125,7 @@ $parms = @{
 }
 
 $parms.Name = "Microsoft.Data.SqlClient"
-$parms.RequiredVersion = "5.1.4"
+$parms.RequiredVersion = "5.2.2"
 $null = Install-Package @parms
 
 $parms.Name = "Microsoft.Data.SqlClient.SNI.runtime"
@@ -112,15 +133,38 @@ $parms.RequiredVersion = "5.2.0"
 $null = Install-Package @parms
 
 $parms.Name = "Microsoft.Identity.Client"
-$parms.RequiredVersion = "4.53.0"
+$parms.RequiredVersion = "4.67.1"
 $null = Install-Package @parms
 
-Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.5.1.4/runtimes/unix/lib/net6.0/Microsoft.Data.SqlClient.dll" -Destination lib
-Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.5.1.4/runtimes/win/lib/net6.0/Microsoft.Data.SqlClient.dll" -Destination lib/win-sqlclient/
-Copy-Item "$tempdir/nuget/Microsoft.Identity.Client.4.53.0/lib/net6.0/Microsoft.Identity.Client.dll" -Destination lib/win-sqlclient/ #Maybe this will be a problem, i dont know
+$parms.Name = "Microsoft.IdentityModel.Abstractions"
+$parms.RequiredVersion = "8.3.1"
+$null = Install-Package @parms
+
+$parms.Name = "Azure.Core"
+$parms.RequiredVersion = "1.38.0"
+$null = Install-Package @parms
+
+
+# README cl: this dll is already there, as we're building dbatools csproj whose dependencies are already included !?
+Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.5.2.2/runtimes/unix/lib/net8.0/Microsoft.Data.SqlClient.dll" -Destination lib
+# Copy to the 'x64' directory
+Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.5.2.2/runtimes/win/lib/net8.0/Microsoft.Data.SqlClient.dll" -Destination lib/win-sqlclient/
+Copy-Item "$tempdir/nuget/Microsoft.Identity.Client.4.67.1/lib/net8.0/Microsoft.Identity.Client.dll" -Destination lib/win-sqlclient/
 Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.SNI.runtime.5.2.0/runtimes/win-x64/native/Microsoft.Data.SqlClient.SNI.dll" -Destination lib/win-sqlclient/
 
+
+# Copy to the 'x86' directory, but with a different SNI DLL file. Remember,the SNI file is not managed code, it's _native_.
+Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.5.2.2/runtimes/win/lib/net8.0/Microsoft.Data.SqlClient.dll" -Destination lib/win-sqlclient-x86/
+Copy-Item "$tempdir/nuget/Microsoft.Identity.Client.4.67.1/lib/net8.0/Microsoft.Identity.Client.dll" -Destination lib/win-sqlclient-x86/
+Copy-Item "$tempdir/nuget/Microsoft.Data.SqlClient.SNI.runtime.5.2.0/runtimes/win-x64/native/Microsoft.Data.SqlClient.SNI.dll" -Destination lib/win-sqlclient-x86/
+
+
+
+Copy-Item "$tempdir/nuget/Azure.Core.1.38.0/lib/net6.0/Azure.Core.dll" -Destination lib/
+Copy-Item "$tempdir/nuget/Microsoft.IdentityModel.Abstractions.8.3.1/lib/net8.0/Microsoft.IdentityModel.Abstractions.dll" -Destination lib/
+
 Copy-Item ./temp/linux/* -Destination lib -Exclude (Get-ChildItem lib -Recurse) -Recurse -Include *.exe, *.config -Verbose
+
 
 Copy-Item "./var/misc/core/*.dll" -Destination ./lib/
 Copy-Item "./var/misc/both/*.dll" -Destination ./lib/
@@ -131,9 +175,11 @@ $linux = 'libclrjit.so', 'libcoreclr.so', 'libhostfxr.so', 'libhostpolicy.so', '
 $sqlp = Get-ChildItem ./temp/linux/* -Exclude (Get-ChildItem lib -Recurse) | Where-Object Name -in $linux
 Copy-Item -Path $sqlp.FullName -Destination ./lib/
 
-Get-ChildItem -Directory -Path ./lib | Where-Object Name -notin 'win-sqlclient', 'x64', 'x86', 'win', 'mac', 'macos' | Remove-Item -Recurse
+Get-ChildItem -Directory -Path ./lib | Where-Object Name -notin 'win-sqlclient', 'win-sqlclient-x86', 'x64', 'x86', 'win', 'mac', 'macos' | Remove-Item -Recurse
 
-Get-ChildItem ./lib, ./lib/win, ./lib/mac | Where-Object BaseName -in (Get-ChildItem /opt/microsoft/powershell/7).BaseName -OutVariable files
+$psh = (whereis pwsh) -split " " | Select-Object -First 1 -Skip 1
+
+Get-ChildItem ./lib, ./lib/win, ./lib/mac | Where-Object BaseName -in (Get-ChildItem (Split-Path -Path $psh)).BaseName -OutVariable files
 
 if ($files) {
     Remove-Item $files -Recurse
@@ -146,17 +192,23 @@ if ($isLinux -or $IsMacOs) {
 }
 
 Get-ChildItem ./lib/*.xml, ./lib/*.pdb -Recurse -OutVariable xmlpdb
+
 if ($xmlpdb) {
     Remove-Item -Path $xmlpdb -Recurse -ErrorAction Ignore
 }
 
-#Import-Module ./dbatools.core.library.psd1
+#Import-Module ./dbatools.library.psd1
 
 <#
     if ((Get-ChildItem -Path C:\gallery\dbatools.library\core -ErrorAction Ignore)) {
         $null = Remove-Item C:\gallery\dbatools.library\core -Recurse
         $null = mkdir C:\gallery\dbatools.library\core
-        $null = robocopy c:\github\dbatools.library C:\gallery\dbatools.library\core /S /XF actions-build.ps1 .markdownlint.json *.psproj* *.git* *.yml *.md dac.ps1 *build*.ps1 /XD .git .github Tests .vscode project temp runtime runtimes replication var opt | Out-String | Out-Null
+        $null = mkdir C:\gallery\dbatools.library\core\lib
+        $null = mkdir C:\gallery\dbatools.library\core\third-party
+        #$null = robocopy c:\github\dbatools.library C:\gallery\dbatools.library\core /S /XF actions-build.ps1 .markdownlint.json *.psproj* *.git* *.yml *.md dac.ps1 *build*.ps1 /XD .git .github Tests .vscode project temp runtime runtimes replication var opt | Out-String | Out-Null
+
+        $null = robocopy C:\github\dbatools.library\lib C:\gallery\dbatools.library\core\lib /S | Out-String | Out-Null
+        $null = robocopy C:\github\dbatools.library\third-party C:\gallery\dbatools.library\core\third-party /S | Out-String | Out-Null
         Remove-Item c:\gallery\dbatools.library\core\dac.ps1 -ErrorAction Ignore
         Remove-Item c:\gallery\dbatools.library\core\dbatools.library.psd1 -ErrorAction Ignore
         #Copy-Item C:\github\dbatools.library\dbatools.core.library.psd1 C:\github\dbatools.core.library
